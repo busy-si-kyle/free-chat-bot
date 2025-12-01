@@ -1,0 +1,34 @@
+# General
+.DS_Store
+Thumbs.db
+
+# Node.js dependencies
+node_modules/
+
+# Composer dependencies
+vendor/
+
+# Vercel deployment files
+.vercel/
+
+# Environment files (keep .env.example in repo)
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+
+# IDE / editor folders
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build artifacts
+build/
+Dist/
+
+# Package manager lock files (optional, keep if needed)
+package-lock.json
+yarn.lock
