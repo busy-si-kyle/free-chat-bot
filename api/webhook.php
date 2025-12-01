@@ -49,22 +49,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 function handleMessage($sender_psid, $received_message, $access_token) {
     error_log("=== WEBHOOK: Message received from $sender_psid ===");
-    $response = [];
-
+    
     if (isset($received_message['text'])) {
         $user_message = $received_message['text'];
         error_log("User message: " . $user_message);
         
+        // Show typing indicator while processing
+        sendTypingIndicator($sender_psid, $access_token, 'typing_on');
+        
         // Call Gemini AI Model
         $ai_reply = callGemini($user_message);
-        error_log("AI reply: " . $ai_reply);
+        error_log("AI reply length: " . strlen($ai_reply) . " characters");
         
-        $response = [
-            'text' => $ai_reply
-        ];
+        // Facebook Messenger has a 2000 character limit per message
+        // Split into chunks if needed
+        $chunks = splitMessage($ai_reply, 1900); // Use 1900 to be safe
+        
+        foreach ($chunks as $chunk) {
+            $response = ['text' => $chunk];
+            callSendAPI($sender_psid, $response, $access_token);
+            
+            // Small delay between messages to avoid rate limiting
+            if (count($chunks) > 1) {
+                usleep(500000); // 0.5 second delay
+            }
+        }
     }
+}
 
-    callSendAPI($sender_psid, $response, $access_token);
+function splitMessage($text, $max_length = 1900) {
+    // If message is short enough, return as-is
+    if (strlen($text) <= $max_length) {
+        return [$text];
+    }
+    
+    $chunks = [];
+    $remaining = $text;
+    
+    while (strlen($remaining) > $max_length) {
+        // Try to split at a natural break point (newline, period, space)
+        $split_pos = $max_length;
+        
+        // Look for newline
+        $last_newline = strrpos(substr($remaining, 0, $max_length), "\n");
+        if ($last_newline !== false && $last_newline > $max_length * 0.7) {
+            $split_pos = $last_newline + 1;
+        } else {
+            // Look for period + space
+            $last_period = strrpos(substr($remaining, 0, $max_length), '. ');
+            if ($last_period !== false && $last_period > $max_length * 0.7) {
+                $split_pos = $last_period + 2;
+            } else {
+                // Look for any space
+                $last_space = strrpos(substr($remaining, 0, $max_length), ' ');
+                if ($last_space !== false && $last_space > $max_length * 0.5) {
+                    $split_pos = $last_space + 1;
+                }
+            }
+        }
+        
+        $chunks[] = trim(substr($remaining, 0, $split_pos));
+        $remaining = substr($remaining, $split_pos);
+    }
+    
+    // Add the remaining text
+    if (strlen($remaining) > 0) {
+        $chunks[] = trim($remaining);
+    }
+    
+    return $chunks;
+}
+
+function sendTypingIndicator($sender_psid, $access_token, $action = 'typing_on') {
+    $url = 'https://graph.facebook.com/v21.0/me/messages?access_token=' . $access_token;
+    
+    $request_body = [
+        'recipient' => ['id' => $sender_psid],
+        'sender_action' => $action  // 'typing_on', 'typing_off', or 'mark_seen'
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($request_body));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+
+    curl_exec($ch);
+    curl_close($ch);
 }
 
 function callGemini($message) {
@@ -102,6 +173,11 @@ function makeGeminiRequest($message, $api_key, $model) {
     $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$api_key}";
     
     $data = [
+        'system_instruction' => [
+            'parts' => [
+                ['text' => 'You are a helpful assistant on Facebook Messenger. Keep your responses concise and to the point unless the user explicitly asks for detailed information. Use clear, conversational language. Break complex topics into digestible points.']
+            ]
+        ],
         'contents' => [
             [
                 'parts' => [
