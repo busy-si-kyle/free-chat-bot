@@ -48,13 +48,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 function handleMessage($sender_psid, $received_message, $access_token) {
+    error_log("=== WEBHOOK: Message received from $sender_psid ===");
     $response = [];
 
     if (isset($received_message['text'])) {
         $user_message = $received_message['text'];
+        error_log("User message: " . $user_message);
         
-        // Call AI Model
-        $ai_reply = callOpenAI($user_message, $ai_api_key);
+        // Call Gemini AI Model
+        $ai_reply = callGemini($user_message);
+        error_log("AI reply: " . $ai_reply);
         
         $response = [
             'text' => $ai_reply
@@ -72,21 +75,26 @@ function callGemini($message) {
     // Try Pro first, then Flash on rate limit
     $models = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 
-    foreach ($keys as $key) {
-        if (empty($key)) continue;
+    foreach ($keys as $key_index => $key) {
+        if (empty($key)) {
+            error_log("Gemini key " . ($key_index + 1) . " is empty, skipping");
+            continue;
+        }
         
         foreach ($models as $model) {
+            error_log("Trying $model with key " . ($key_index + 1));
             $response = makeGeminiRequest($message, $key, $model);
             
             if ($response['success']) {
+                error_log("SUCCESS with $model");
                 return $response['text'];
             }
             
-            // If it's not a rate limit error (429), we might want to stop or continue? 
-            // For now, we continue on 429. If it's another error, we might still want to try the next option just in case.
+            error_log("FAILED with $model - Code: " . ($response['code'] ?? 'unknown'));
         }
     }
 
+    error_log("All Gemini attempts failed, returning error message");
     return "Sorry, I'm having trouble connecting to the AI right now.";
 }
 
@@ -123,6 +131,7 @@ function makeGeminiRequest($message, $api_key, $model) {
         }
     }
 
+    error_log("Gemini API Error - Code: $http_code, Response: " . $result);
     return ['success' => false, 'code' => $http_code];
 }
 
@@ -134,6 +143,8 @@ function callSendAPI($sender_psid, $response, $access_token) {
         'message' => $response
     ];
 
+    error_log("Sending to Facebook: " . json_encode($request_body));
+
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -141,6 +152,9 @@ function callSendAPI($sender_psid, $response, $access_token) {
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
 
     $result = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+
+    error_log("Facebook API Response - Code: $http_code, Response: " . $result);
 }
 ?>
