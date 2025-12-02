@@ -59,6 +59,10 @@ function handleMessage($sender_psid, $received_message, $access_token) {
         
         // Call Gemini AI Model
         $ai_reply = callGemini($user_message);
+        
+        // Format the message for Messenger (Markdown -> Unicode)
+        $ai_reply = formatMessageForMessenger($ai_reply);
+        
         error_log("AI reply length: " . strlen($ai_reply) . " characters");
         
         // Facebook Messenger has a 2000 character limit per message
@@ -232,5 +236,114 @@ function callSendAPI($sender_psid, $response, $access_token) {
     curl_close($ch);
 
     error_log("Facebook API Response - Code: $http_code, Response: " . $result);
+}
+
+function formatMessageForMessenger($text) {
+    // 1. Convert Bold (**text** or __text__)
+    $text = preg_replace_callback('/(\*\*|__)(.*?)\1/', function($matches) {
+        return toBoldUnicode($matches[2]);
+    }, $text);
+
+    // 2. Convert Italic (*text* or _text_)
+    // Note: We need to be careful not to match within words if we want strict markdown, 
+    // but for simplicity, we'll match generic pairs.
+    $text = preg_replace_callback('/(\*|_)(.*?)\1/', function($matches) {
+        return toItalicUnicode($matches[2]);
+    }, $text);
+
+    // 3. Convert Strikethrough (~~text~~)
+    $text = preg_replace_callback('/~~(.*?)~~/', function($matches) {
+        return toStrikeUnicode($matches[1]);
+    }, $text);
+
+    // 4. Convert Monospace (`text`)
+    $text = preg_replace_callback('/`(.*?)`/', function($matches) {
+        return toMonospaceUnicode($matches[1]);
+    }, $text);
+
+    // 5. Convert Headers (# Header) to Bold
+    $text = preg_replace_callback('/^#{1,6}\s+(.*)$/m', function($matches) {
+        return toBoldUnicode($matches[1]);
+    }, $text);
+
+    // 6. Convert Lists
+    // Unordered lists (- item or * item) -> • item
+    $text = preg_replace('/^[\*\-]\s+/m', "• ", $text);
+    
+    // Ordered lists (1. item) - keep as is, or could convert numbers to unicode if desired.
+    // For now, we'll leave ordered lists as they are readable.
+
+    return $text;
+}
+
+// Helper functions for Unicode conversion
+
+function toBoldUnicode($text) {
+    // Map for Bold (Mathematical Sans-Serif Bold)
+    // A-Z: 1D5D4-1D5ED
+    // a-z: 1D5EE-1D607
+    // 0-9: 1D7EC-1D7F5
+    
+    return mapToUnicode($text, [
+        'A' => 0x1D5D4, 'a' => 0x1D5EE, '0' => 0x1D7EC
+    ]);
+}
+
+function toItalicUnicode($text) {
+    // Map for Italic (Mathematical Sans-Serif Italic)
+    // A-Z: 1D608-1D621
+    // a-z: 1D622-1D63B
+    
+    return mapToUnicode($text, [
+        'A' => 0x1D608, 'a' => 0x1D622
+    ]);
+}
+
+function toStrikeUnicode($text) {
+    // Strikethrough is done by combining characters (U+0336)
+    $result = '';
+    $chars = mb_str_split($text);
+    foreach ($chars as $char) {
+        $result .= $char . "\u{0336}";
+    }
+    return $result;
+}
+
+function toMonospaceUnicode($text) {
+    // Map for Monospace
+    // A-Z: 1D670-1D689
+    // a-z: 1D68A-1D6A3
+    // 0-9: 1D7F6-1D7FF
+    
+    return mapToUnicode($text, [
+        'A' => 0x1D670, 'a' => 0x1D68A, '0' => 0x1D7F6
+    ]);
+}
+
+function mapToUnicode($text, $offsets) {
+    $result = '';
+    $chars = mb_str_split($text);
+    
+    foreach ($chars as $char) {
+        $ord = mb_ord($char);
+        $newChar = $char;
+        
+        // A-Z
+        if ($ord >= 65 && $ord <= 90 && isset($offsets['A'])) {
+            $newChar = mb_chr($offsets['A'] + ($ord - 65));
+        }
+        // a-z
+        elseif ($ord >= 97 && $ord <= 122 && isset($offsets['a'])) {
+            $newChar = mb_chr($offsets['a'] + ($ord - 97));
+        }
+        // 0-9
+        elseif ($ord >= 48 && $ord <= 57 && isset($offsets['0'])) {
+            $newChar = mb_chr($offsets['0'] + ($ord - 48));
+        }
+        
+        $result .= $newChar;
+    }
+    
+    return $result;
 }
 ?>
