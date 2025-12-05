@@ -188,14 +188,7 @@ function makeGeminiRequest($message, $api_key, $model) {
             ]
         ],
         'tools' => [
-            [
-                'google_search_retrieval' => [
-                    'dynamic_retrieval_config' => [
-                        'mode' => 'MODE_DYNAMIC',
-                        'dynamic_threshold' => 0.7,
-                    ]
-                ]
-            ]
+            ['google_search' => new stdClass()]
         ],
         'contents' => [
             [
