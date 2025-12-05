@@ -57,26 +57,31 @@ function handleMessage($sender_psid, $received_message, $access_token) {
         // Show typing indicator while processing
         sendTypingIndicator($sender_psid, $access_token, 'typing_on');
         
-        // Call Gemini AI Model
-        $ai_reply = callGemini($user_message);
-        
-        // Format the message for Messenger (Markdown -> Unicode)
-        $ai_reply = formatMessageForMessenger($ai_reply);
-        
-        error_log("AI reply length: " . strlen($ai_reply) . " characters");
-        
-        // Facebook Messenger has a 2000 character limit per message
-        // Split into chunks if needed
-        $chunks = splitMessage($ai_reply, 1900); // Use 1900 to be safe
-        
-        foreach ($chunks as $chunk) {
-            $response = ['text' => $chunk];
-            callSendAPI($sender_psid, $response, $access_token);
+        try {
+            // Call Gemini AI Model
+            $ai_reply = callGemini($user_message);
             
-            // Small delay between messages to avoid rate limiting
-            if (count($chunks) > 1) {
-                usleep(500000); // 0.5 second delay
+            // Format the message for Messenger (Markdown -> Unicode)
+            $ai_reply = formatMessageForMessenger($ai_reply);
+            
+            error_log("AI reply length: " . strlen($ai_reply) . " characters");
+            
+            // Facebook Messenger has a 2000 character limit per message
+            // Split into chunks if needed
+            $chunks = splitMessage($ai_reply, 1900); // Use 1900 to be safe
+            
+            foreach ($chunks as $chunk) {
+                $response = ['text' => $chunk];
+                callSendAPI($sender_psid, $response, $access_token);
+                
+                // Small delay between messages to avoid rate limiting
+                if (count($chunks) > 1) {
+                    usleep(500000); // 0.5 second delay
+                }
             }
+        } finally {
+            // Ensure typing indicator is turned off
+            sendTypingIndicator($sender_psid, $access_token, 'typing_off');
         }
     }
 }
@@ -180,6 +185,16 @@ function makeGeminiRequest($message, $api_key, $model) {
         'system_instruction' => [
             'parts' => [
                 ['text' => 'You are a helpful assistant on Facebook Messenger. Keep your responses concise and to the point unless the user explicitly asks for detailed information. Use clear, conversational language. Break complex topics into digestible points.']
+            ]
+        ],
+        'tools' => [
+            [
+                'google_search_retrieval' => [
+                    'dynamic_retrieval_config' => [
+                        'mode' => 'MODE_DYNAMIC',
+                        'dynamic_threshold' => 0.7,
+                    ]
+                ]
             ]
         ],
         'contents' => [
