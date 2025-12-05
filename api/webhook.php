@@ -191,7 +191,7 @@ function makeGeminiRequest($message, $api_key, $model) {
             [
                 'google_search_retrieval' => [
                     'dynamic_retrieval_config' => [
-                        'mode' => 'MODE_DYNAMIC',
+                        'mode' => 'dynamic',
                         'dynamic_threshold' => 0.7,
                     ]
                 ]
@@ -216,6 +216,7 @@ function makeGeminiRequest($message, $api_key, $model) {
 
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
     curl_close($ch);
 
     if ($http_code === 200) {
@@ -226,7 +227,12 @@ function makeGeminiRequest($message, $api_key, $model) {
         }
     }
 
-    error_log("Gemini API Error - Code: $http_code, Response: " . $result);
+    error_log("Gemini API Error - Model: $model, Code: $http_code");
+    error_log("Response Body: " . $result);
+    if ($curl_error) {
+        error_log("Curl Error: " . $curl_error);
+    }
+    
     return ['success' => false, 'code' => $http_code];
 }
 
